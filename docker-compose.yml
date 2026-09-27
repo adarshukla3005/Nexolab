@@ -1,0 +1,71 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: dlc
+      POSTGRES_PASSWORD: dlc
+      POSTGRES_DB: dlc
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5434:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dlc -d dlc"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    ports:
+      - "4001:4000"
+    environment:
+      DATABASE_URL: postgresql://dlc:dlc@postgres:5432/dlc
+      SESSION_SECRET: ${SESSION_SECRET:-dev_secret_change_in_prod}
+      SMTP_URL: ${SMTP_URL:-smtp://mailhog:1025}
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-http://localhost:3001}
+      GIT_TOKEN: ${GIT_TOKEN:-}
+      LITELLM_BASE_URL: ${LITELLM_BASE_URL:-http://host.docker.internal:4001}
+      LITELLM_API_KEY: ${LITELLM_API_KEY:-sk-placeholder}
+      LITELLM_MODEL: ${LITELLM_MODEL:-claude-sonnet-4-6}
+      REVIEWER_MODE: ${REVIEWER_MODE:-stub}
+      NODE_ENV: ${NODE_ENV:-production}
+    volumes:
+      - repos:/data/repos
+      - worktrees:/data/worktrees
+      - snapshots:/data/snapshots
+      - user-credentials:/data/user-credentials
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    ports:
+      - "3001:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  mailhog:
+    image: mailhog/mailhog
+    ports:
+      - "1026:1025"
+      - "8026:8025"
+    profiles: ["dev"]
+
+volumes:
+  pgdata:
+  repos:
+  worktrees:
+  snapshots:
+  user-credentials:
