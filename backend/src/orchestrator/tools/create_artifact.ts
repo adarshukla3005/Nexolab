@@ -28,6 +28,15 @@ export const handler: ToolHandler = async (args, ctx) => {
   if (!slug) return { error: 'slug is required. Provide a URL-safe identifier like "app-design-overview".' }
   if (!title) return { error: 'title is required. Provide a human-readable title.' }
   if (!artifact_type) return { error: 'artifact_type is required.' }
+  // Content is the whole point of the tool — refuse empty/missing content loudly so the AI
+  // fixes its call rather than silently producing a zero-byte artifact.
+  const trimmed = typeof content === 'string' ? content.trim() : ''
+  if (!trimmed) {
+    return {
+      error:
+        'content is required and must be a non-empty markdown string containing the full artifact body. You passed an empty or missing `content` field. Retry create_artifact with the complete markdown in the `content` parameter — inline the entire document, do not truncate or reference it elsewhere.',
+    }
+  }
 
   // If an artifact already exists at this slug (create_artifact upserts), snapshot the
   // current version first so we don't silently lose it.

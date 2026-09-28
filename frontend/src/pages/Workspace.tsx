@@ -13,6 +13,7 @@ import { PresenceBar } from '../components/PresenceBar.js'
 import { DiscussionPanel } from '../components/discussion/DiscussionPanel.js'
 import { ArtifactChat } from '../components/ArtifactChat.js'
 import { StageLogPane } from '../components/StageLogPane.js'
+import ReactMarkdown from 'react-markdown'
 import { toast } from 'sonner'
 
 interface Feature {
@@ -107,6 +108,36 @@ export function Workspace() {
   const [stageArtifactView, setStageArtifactView] = useState<string | null>(null) // slug of stage whose artifacts are shown in center
   const [logsPanelHeight, setLogsPanelHeight] = useState(320) // px height of logs pane in left panel
   const logsDragRef = useRef<{ startY: number; startH: number } | null>(null)
+  // Left column width — user-resizable via drag handle on its right edge. Persisted so
+  // the workspace doesn't reset every navigation.
+  const [leftPanelWidth, setLeftPanelWidth] = useState<number>(() => {
+    const raw = typeof window !== 'undefined' ? window.localStorage.getItem('workspace.leftPanelWidth') : null
+    const n = raw ? Number(raw) : NaN
+    return Number.isFinite(n) && n >= 180 && n <= 720 ? n : 256 // default = current w-64
+  })
+  const leftDragRef = useRef<{ startX: number; startW: number } | null>(null)
+  const onLeftDragStart = (e: React.MouseEvent) => {
+    leftDragRef.current = { startX: e.clientX, startW: leftPanelWidth }
+    let latest = leftPanelWidth
+    const onMove = (ev: MouseEvent) => {
+      if (!leftDragRef.current) return
+      const delta = ev.clientX - leftDragRef.current.startX
+      latest = Math.min(720, Math.max(180, leftDragRef.current.startW + delta))
+      setLeftPanelWidth(latest)
+    }
+    const onUp = () => {
+      leftDragRef.current = null
+      try { window.localStorage.setItem('workspace.leftPanelWidth', String(latest)) } catch { /* ignore */ }
+      window.removeEventListener('mousemove', onMove)
+      window.removeEventListener('mouseup', onUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
+    window.addEventListener('mousemove', onMove)
+    window.addEventListener('mouseup', onUp)
+    document.body.style.cursor = 'col-resize'
+    document.body.style.userSelect = 'none'
+  }
 
   // Browser-style tabs: artifacts and file tabs unified
   const [openTabs, setOpenTabs] = useState<CenterTab[]>([])
@@ -582,8 +613,35 @@ export function Workspace() {
                 <button onClick={() => setPlanPreview(null)} className="text-muted-foreground hover:text-foreground text-lg leading-none px-1">×</button>
               </div>
             </div>
-            <div className="flex-1 overflow-auto p-4">
-              <pre className="text-xs font-mono whitespace-pre-wrap text-foreground leading-relaxed">{planPreview}</pre>
+            <div className="flex-1 overflow-auto p-6">
+              <div className="max-w-3xl mx-auto text-foreground">
+                <ReactMarkdown
+                  components={{
+                    h1: ({ children }) => <h1 className="text-2xl font-bold mt-6 mb-3 first:mt-0 pb-2 border-b border-border">{children}</h1>,
+                    h2: ({ children }) => <h2 className="text-xl font-semibold mt-5 mb-2">{children}</h2>,
+                    h3: ({ children }) => <h3 className="text-base font-semibold mt-4 mb-2">{children}</h3>,
+                    h4: ({ children }) => <h4 className="text-sm font-semibold mt-3 mb-1.5 uppercase tracking-wide text-muted-foreground">{children}</h4>,
+                    p: ({ children }) => <p className="text-sm leading-relaxed mb-3">{children}</p>,
+                    strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                    em: ({ children }) => <em className="italic">{children}</em>,
+                    ul: ({ children }) => <ul className="list-disc pl-6 mb-3 space-y-1 text-sm">{children}</ul>,
+                    ol: ({ children }) => <ol className="list-decimal pl-6 mb-3 space-y-1 text-sm">{children}</ol>,
+                    li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                    code: ({ children, className }) => className
+                      ? <pre className="bg-secondary/50 border border-border rounded-md px-3 py-2 text-xs font-mono overflow-x-auto my-3 whitespace-pre-wrap"><code>{children}</code></pre>
+                      : <code className="bg-secondary/60 border border-border rounded px-1.5 py-0.5 text-[0.85em] font-mono">{children}</code>,
+                    a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 hover:opacity-80">{children}</a>,
+                    blockquote: ({ children }) => <blockquote className="border-l-4 border-primary/40 pl-4 py-1 my-3 italic text-muted-foreground">{children}</blockquote>,
+                    hr: () => <hr className="my-6 border-border" />,
+                    table: ({ children }) => <div className="overflow-x-auto my-4"><table className="min-w-full text-sm border border-border">{children}</table></div>,
+                    thead: ({ children }) => <thead className="bg-secondary/50">{children}</thead>,
+                    th: ({ children }) => <th className="px-3 py-2 text-left font-semibold border-b border-border">{children}</th>,
+                    td: ({ children }) => <td className="px-3 py-2 border-b border-border">{children}</td>,
+                  }}
+                >
+                  {planPreview}
+                </ReactMarkdown>
+              </div>
             </div>
             <div className="px-4 py-3 border-t border-border flex-shrink-0 flex items-center justify-between">
               <p className="text-xs text-muted-foreground">This is a preview of what will be committed to the <code className="font-mono">{feature.plan_branch}</code> branch</p>
@@ -694,8 +752,11 @@ export function Workspace() {
 
       {/* Main 3-column layout */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Left column */}
-        <div className="w-64 flex-shrink-0 border-r border-border flex flex-col overflow-hidden">
+        {/* Left column — resizable via drag handle on its right edge (min 180, max 720). */}
+        <div
+          className="flex-shrink-0 border-r border-border flex flex-col overflow-hidden relative"
+          style={{ width: `${leftPanelWidth}px` }}
+        >
           <div className="flex border-b border-border">
             {(['phases', 'files', 'artifacts'] as LeftTab[]).map((tab) => (
               <button
@@ -820,6 +881,12 @@ export function Workspace() {
               </div>
             )}
           </div>
+          {/* Drag handle — hover shows a col-resize cursor; drag to resize left panel. */}
+          <div
+            onMouseDown={onLeftDragStart}
+            className="absolute top-0 right-0 h-full w-1 cursor-col-resize hover:bg-primary/40 active:bg-primary/60 transition-colors z-10"
+            title="Drag to resize"
+          />
         </div>
 
         {/* Center column */}
@@ -860,35 +927,6 @@ export function Workspace() {
                       ×
                     </span>
                   </button>
-                )
-              })}
-            </div>
-          )}
-
-          {/* Stage progress timeline */}
-          {stageRuns.length > 0 && (
-            <div className="border-b border-border px-3 py-2 flex items-center gap-1 flex-wrap overflow-x-auto flex-shrink-0">
-              {stageRuns.map((sr, i) => {
-                const isCurrent = sr.stage_slug === feature.current_stage_id
-                const color =
-                  sr.status === 'done' ? 'bg-green-500' :
-                  sr.status === 'running' ? 'bg-blue-500 animate-pulse' :
-                  sr.status === 'parked' ? 'bg-amber-400' :
-                  sr.status === 'failed' ? 'bg-red-500' :
-                  sr.status === 'stopped' ? 'bg-amber-500' : 'bg-muted'
-                return (
-                  <div key={sr.stage_slug} className="flex items-center gap-1">
-                    {i > 0 && <div className="w-3 h-px bg-border" />}
-                    <div
-                      className={`flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                        isCurrent ? 'ring-1 ring-primary' : ''
-                      } bg-secondary text-muted-foreground`}
-                      title={`${sr.stage_slug}: ${sr.status}`}
-                    >
-                      <div className={`w-1.5 h-1.5 rounded-full ${color}`} />
-                      {sr.stage_slug.replace(/-/g, ' ')}
-                    </div>
-                  </div>
                 )
               })}
             </div>
@@ -962,25 +1000,48 @@ export function Workspace() {
             </div>
           )}
 
-          {/* Pending gates strip — scrollable so tall gate cards don't clip */}
-          {pendingGates.length > 0 && (
-            <div className="border-b border-border bg-amber-50/50 flex-shrink-0 overflow-auto" style={{ maxHeight: '55vh' }}>
-              <p className="text-sm font-medium text-amber-700 px-3 pt-3 pb-2">
-                {pendingGates.length} pending {pendingGates.length === 1 ? 'action' : 'actions'}
-              </p>
-              <div className="px-3 pb-3 space-y-2">
-                {pendingGates.map((g) => (
-                  <GateCard key={g.id} gate={g} currentUserId={user?.id} onAnswered={loadData} />
-                ))}
+          {/* Full-width strips (span both artifact + chat columns) only for tall
+              question gates. Thin validation (approval) bars are rendered inside the
+              artifact column below so the chat panel sits right under the tabs strip. */}
+          {(() => {
+            const questionGates = pendingGates.filter((g) => g.kind === 'question')
+            if (questionGates.length === 0) return null
+            return (
+              <div
+                className="border-b border-border bg-amber-50/50 flex-shrink-0 overflow-auto"
+                style={{ maxHeight: '55vh' }}
+              >
+                <p className="text-sm font-medium text-amber-700 px-3 pt-2 pb-1">
+                  {questionGates.length} pending {questionGates.length === 1 ? 'action' : 'actions'}
+                </p>
+                <div className="px-3 pb-2 space-y-1.5">
+                  {questionGates.map((g) => (
+                    <GateCard key={g.id} gate={g} currentUserId={user?.id} onAnswered={loadData} />
+                  ))}
+                </div>
               </div>
-            </div>
-          )}
+            )
+          })()}
 
           {/* Artifact editor area + chat panel.
               Outer is a vertical flex (top row = horizontal split of artifact+side-chat, bottom row = dock-chat). */}
           <div className="flex-1 overflow-hidden flex flex-col min-h-0">
             <div className="flex-1 overflow-hidden flex flex-row min-w-0">
-            <div className="flex-1 overflow-hidden min-w-0">
+            <div className="flex-1 overflow-hidden min-w-0 flex flex-col">
+              {/* Thin validation-gate bar — sits inside the artifact column only,
+                  so the side chat starts flush against the tabs strip. */}
+              {(() => {
+                const validationGates = pendingGates.filter((g) => g.kind === 'validation')
+                if (validationGates.length === 0) return null
+                return (
+                  <div className="border-b border-border px-2 py-1.5 flex-shrink-0 space-y-1">
+                    {validationGates.map((g) => (
+                      <GateCard key={g.id} gate={g} currentUserId={user?.id} onAnswered={loadData} />
+                    ))}
+                  </div>
+                )
+              })()}
+              <div className="flex-1 overflow-hidden min-w-0">
               {stageArtifactView && !activeTab ? (
                 // Stage artifact panel — special-cases review (show plan) and approval (show approved-by).
                 (() => {
@@ -1259,7 +1320,8 @@ export function Workspace() {
                   )}
                 </div>
               )}
-            </div>
+              </div>{/* end artifact-inner scroll box */}
+            </div>{/* end artifact column (holds validation strip + inner) */}
 
             {/* AI Chat panel — vertical side-dock inside the center panel, LEFT of the discussion column.
                 Horizontal drag handle on the left edge resizes it. */}

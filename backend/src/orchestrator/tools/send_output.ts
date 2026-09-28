@@ -19,6 +19,22 @@ export const schema = {
 
 export const handler: ToolHandler = async (args, ctx) => {
   const { message, artifacts_produced = [] } = args as { message: string; artifacts_produced?: string[] }
+
+  // Guard: refuse to close the stage if no artifact was ever produced.
+  // Some models (esp. Sonnet under tool-use) call create_artifact with content missing,
+  // ignore the validation error, and then call send_output — which used to close the
+  // stage with zero saved work. Now we refuse and demand a proper create_artifact call.
+  const hasArtifact = await query<{ n: string }>(
+    `SELECT COUNT(*)::text AS n FROM artifacts WHERE stage_run_id = $1`,
+    [ctx.stageRunId],
+  )
+  if (Number(hasArtifact.rows[0]?.n ?? '0') === 0) {
+    return {
+      error:
+        'Cannot send_output: no artifact was produced for this stage. You MUST call create_artifact with ALL required fields (artifact_type, slug, title, and — most importantly — content containing the full markdown body). Do not call send_output again until create_artifact succeeds (returns { ok: true, artifact_id }).',
+    }
+  }
+
   await query(
     `UPDATE stage_runs SET status = 'done', completed_at = now() WHERE id = $1`,
     [ctx.stageRunId],

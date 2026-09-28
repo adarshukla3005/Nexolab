@@ -146,13 +146,54 @@ export function GateCard({
     }
   }
 
+  // Compact single-row layout for validation (approval) gates — no big card,
+  // just a thin strip that fits under the tab bar so the artifact editor stays visible.
+  if (gate.kind === 'validation') {
+    const isValidation = true
+    const validationDisabled = iAlreadyApproved || quorumMet
+    const disabled = loading || validationDisabled
+    let label: string
+    if (loading) label = 'Submitting…'
+    else if (iAlreadyApproved) label = '✓ You approved'
+    else if (quorumMet) label = `Quorum met (${approvedCount}/${gateQuorum})`
+    else label = `Approve stage (${approvedCount}/${gateQuorum})`
+    return (
+      <div className={`flex items-center gap-3 px-3 py-1.5 rounded-md border ${
+        isAnswered || quorumMet
+          ? 'border-green-200 bg-green-50 dark:border-green-900 dark:bg-green-950/30'
+          : 'border-amber-200 bg-amber-50 dark:border-amber-900 dark:bg-amber-950/30'
+      }`}>
+        <span className={`text-[11px] px-1.5 py-0.5 rounded-full font-medium flex-shrink-0 ${
+          isAnswered || quorumMet ? 'bg-green-100 text-green-700 dark:bg-green-950 dark:text-green-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-950 dark:text-blue-300'
+        }`}>
+          {isAnswered || quorumMet ? '✓ Approved' : 'Approval needed'}
+        </span>
+        <span className="text-xs text-foreground flex-1 min-w-0 truncate">
+          {gate.question_text.replace(/\*\*([^*]+)\*\*/g, '$1')}
+        </span>
+        {!isAnswered && !quorumMet && (
+          <button
+            onClick={handleAnswer}
+            disabled={disabled}
+            title={iAlreadyApproved ? 'You have already approved this stage.' : ''}
+            className={`flex-shrink-0 px-3 py-1 rounded text-xs font-medium transition-colors ${
+              disabled ? 'bg-secondary text-muted-foreground cursor-not-allowed' : 'bg-primary text-primary-foreground hover:opacity-90'
+            }`}
+          >
+            {label}
+          </button>
+        )}
+        {/* Suppress unused var warning for isValidation — kept for symmetry with the full-card path. */}
+        {isValidation && null}
+      </div>
+    )
+  }
+
   return (
     <div className={`border rounded-lg p-4 mb-3 ${isAnswered ? 'border-green-200 bg-green-50' : 'border-amber-200 bg-amber-50'}`}>
       <div className="flex items-center gap-2 mb-2">
-        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
-          gate.kind === 'validation' ? 'bg-blue-100 text-blue-700' : 'bg-amber-100 text-amber-700'
-        }`}>
-          {gate.kind === 'validation' ? 'Approval needed' : isBatch ? 'Questions' : 'Question'}
+        <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-amber-100 text-amber-700">
+          {isBatch ? 'Questions' : 'Question'}
         </span>
         {isAnswered && <span className="text-xs text-green-600 font-medium">✓ {gate.status}</span>}
       </div>
@@ -243,31 +284,22 @@ export function GateCard({
       {!isAnswered && (
         <div className="mt-4">
           {(() => {
-            const isValidation = gate.kind === 'validation'
-            const validationDisabled = isValidation && (iAlreadyApproved || quorumMet)
+            // Validation gates render via the compact path early-returned above,
+            // so here `gate.kind` is always 'question'.
             const disabled = loading
-              || validationDisabled
-              || (gate.kind === 'question' && !isBatch && selected.length === 0)
+              || (!isBatch && selected.length === 0)
               || (isBatch && !batchComplete)
 
-            let label: string
-            if (loading) {
-              label = 'Submitting…'
-            } else if (isValidation) {
-              if (iAlreadyApproved) label = '✓ You approved'
-              else if (quorumMet) label = `Quorum met (${approvedCount}/${gateQuorum})`
-              else label = `Approve stage (${approvedCount}/${gateQuorum})`
-            } else if (isBatch) {
-              label = `Submit all ${gate.question_schema?.questions?.length ?? ''} answers`
-            } else {
-              label = 'Submit answer'
-            }
+            const label = loading
+              ? 'Submitting…'
+              : isBatch
+                ? `Submit all ${gate.question_schema?.questions?.length ?? ''} answers`
+                : 'Submit answer'
 
             return (
               <button
                 onClick={handleAnswer}
                 disabled={disabled}
-                title={iAlreadyApproved ? 'You have already approved this stage.' : quorumMet ? 'Quorum already reached.' : ''}
                 className={`px-4 py-1.5 rounded text-sm font-medium transition-colors ${
                   disabled
                     ? 'bg-secondary text-muted-foreground cursor-not-allowed'

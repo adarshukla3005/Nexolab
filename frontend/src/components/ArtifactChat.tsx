@@ -453,8 +453,8 @@ export function ArtifactChat({
             onKeyDown={handleKeyDown}
             placeholder="Ask anything or request a change…"
             disabled={sending}
-            rows={1}
-            className="flex-1 text-sm bg-transparent resize-none focus:outline-none disabled:opacity-50 placeholder:text-muted-foreground/50 max-h-24"
+            rows={3}
+            className="flex-1 text-sm bg-transparent resize-none focus:outline-none disabled:opacity-50 placeholder:text-muted-foreground/50 max-h-56 min-h-[4.5rem]"
             style={{ lineHeight: '1.5' }}
           />
           <button

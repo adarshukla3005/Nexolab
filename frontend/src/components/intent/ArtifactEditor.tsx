@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import ReactMarkdown from 'react-markdown'
 import { api } from '../../lib/api.js'
 import { toast } from 'sonner'
 import { SelectionPopover } from './SelectionPopover.js'
@@ -46,6 +47,17 @@ export function ArtifactEditor({ featureId, artifactId, slug, title, initialCont
   const [historyOpen, setHistoryOpen] = useState(false)
   const [versions, setVersions] = useState<ArtifactVersionRow[]>([])
   const [historyLoading, setHistoryLoading] = useState(false)
+
+  // View mode: 'edit' shows raw markdown in a textarea; 'preview' renders it read-only.
+  // Persisted per-artifact so switching tabs remembers your choice.
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>(() => {
+    try {
+      return (window.localStorage.getItem(`artifact.viewMode.${artifactId}`) as 'edit' | 'preview') ?? 'edit'
+    } catch { return 'edit' }
+  })
+  useEffect(() => {
+    try { window.localStorage.setItem(`artifact.viewMode.${artifactId}`, viewMode) } catch { /* ignore */ }
+  }, [artifactId, viewMode])
 
   // Reset editor when a different artifact is loaded, but only when the id truly changes.
   useEffect(() => {
@@ -260,6 +272,28 @@ export function ArtifactEditor({ featureId, artifactId, slug, title, initialCont
             )}
             {statusLabel}
           </span>
+          {/* Edit / Preview segmented toggle. Preview is read-only rendered markdown;
+              switching back to Edit lets you type again. */}
+          <div className="flex items-center rounded-md border border-border overflow-hidden text-xs">
+            <button
+              onClick={() => setViewMode('edit')}
+              className={`px-2 py-1 transition-colors ${
+                viewMode === 'edit' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
+              }`}
+              title="Edit markdown source"
+            >
+              Edit
+            </button>
+            <button
+              onClick={() => setViewMode('preview')}
+              className={`px-2 py-1 transition-colors ${
+                viewMode === 'preview' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground hover:bg-secondary'
+              }`}
+              title="Preview rendered markdown (read-only)"
+            >
+              Preview
+            </button>
+          </div>
           {/* History dropdown */}
           <div className="relative" data-history-root>
             <button
@@ -336,18 +370,51 @@ export function ArtifactEditor({ featureId, artifactId, slug, title, initialCont
           </button>
         </div>
       </div>
-      <textarea
-        ref={textareaRef}
-        value={content}
-        onChange={handleChange}
-        onKeyDown={handleKeyDown}
-        onMouseUp={handleSelect}
-        onKeyUp={handleSelect}
-        className="flex-1 p-4 font-mono text-sm resize-none focus:outline-none bg-background text-foreground"
-        placeholder="Artifact content (Markdown)…"
-        spellCheck={false}
-      />
-      {selection && (
+      {viewMode === 'edit' ? (
+        <textarea
+          ref={textareaRef}
+          value={content}
+          onChange={handleChange}
+          onKeyDown={handleKeyDown}
+          onMouseUp={handleSelect}
+          onKeyUp={handleSelect}
+          className="flex-1 p-4 font-mono text-sm resize-none focus:outline-none bg-background text-foreground"
+          placeholder="Artifact content (Markdown)…"
+          spellCheck={false}
+        />
+      ) : (
+        <div className="flex-1 overflow-auto p-6 bg-background">
+          <div className="max-w-3xl mx-auto text-foreground">
+            <ReactMarkdown
+              components={{
+                h1: ({ children }) => <h1 className="text-2xl font-bold mt-6 mb-3 first:mt-0 pb-2 border-b border-border">{children}</h1>,
+                h2: ({ children }) => <h2 className="text-xl font-semibold mt-5 mb-2">{children}</h2>,
+                h3: ({ children }) => <h3 className="text-base font-semibold mt-4 mb-2">{children}</h3>,
+                h4: ({ children }) => <h4 className="text-sm font-semibold mt-3 mb-1.5 uppercase tracking-wide text-muted-foreground">{children}</h4>,
+                p: ({ children }) => <p className="text-sm leading-relaxed mb-3">{children}</p>,
+                strong: ({ children }) => <strong className="font-semibold text-foreground">{children}</strong>,
+                em: ({ children }) => <em className="italic">{children}</em>,
+                ul: ({ children }) => <ul className="list-disc pl-6 mb-3 space-y-1 text-sm">{children}</ul>,
+                ol: ({ children }) => <ol className="list-decimal pl-6 mb-3 space-y-1 text-sm">{children}</ol>,
+                li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+                code: ({ children, className }) => className
+                  ? <pre className="bg-secondary/50 border border-border rounded-md px-3 py-2 text-xs font-mono overflow-x-auto my-3 whitespace-pre-wrap"><code>{children}</code></pre>
+                  : <code className="bg-secondary/60 border border-border rounded px-1.5 py-0.5 text-[0.85em] font-mono">{children}</code>,
+                a: ({ href, children }) => <a href={href} target="_blank" rel="noreferrer" className="text-primary underline underline-offset-2 hover:opacity-80">{children}</a>,
+                blockquote: ({ children }) => <blockquote className="border-l-4 border-primary/40 pl-4 py-1 my-3 italic text-muted-foreground">{children}</blockquote>,
+                hr: () => <hr className="my-6 border-border" />,
+                table: ({ children }) => <div className="overflow-x-auto my-4"><table className="min-w-full text-sm border border-border">{children}</table></div>,
+                thead: ({ children }) => <thead className="bg-secondary/50">{children}</thead>,
+                th: ({ children }) => <th className="px-3 py-2 text-left font-semibold border-b border-border">{children}</th>,
+                td: ({ children }) => <td className="px-3 py-2 border-b border-border">{children}</td>,
+              }}
+            >
+              {content || '_(empty artifact — switch to Edit to add content)_'}
+            </ReactMarkdown>
+          </div>
+        </div>
+      )}
+      {viewMode === 'edit' && selection && (
         <SelectionPopover
           featureId={featureId}
           artifactSlug={slug}

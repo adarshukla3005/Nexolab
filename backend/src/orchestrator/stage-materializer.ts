@@ -14,8 +14,9 @@ interface MaterializeInput {
 }
 
 // Fetches answered intake questionnaire (kind='intake') so its answers can be
-// prepended to every stage's system prompt.
-async function loadIntakeAnswers(featureId: string): Promise<string> {
+// prepended to every stage's system prompt AND appended to the proposal artifact
+// so anyone opening the stage later can see what was asked and what was answered.
+export async function loadIntakeAnswers(featureId: string): Promise<string> {
   const row = await query<{ answer: unknown; question_schema: unknown }>(
     `SELECT answer, question_schema FROM human_gates
      WHERE feature_id = $1 AND kind = 'intake' AND status = 'answered'
